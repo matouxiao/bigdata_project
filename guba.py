@@ -3,57 +3,63 @@ from bs4 import BeautifulSoup
 import time
 import csv  # 导入 csv 模块
 
-def get_guba_titles(stock_code, pages=5):
+# 函数重命名以反映其功能扩展
+def get_guba_posts(stock_code, pages=5):
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0',
-        'Cookie': 'rankpromt=1; st_si=05887098178896; qgqp_b_id=772c1f0eee811fb0a495dca38f4b5e65; fullscreengg=1; fullscreengg2=1; st_pvi=13788631049269; st_sp=2025-04-14%2010%3A16%3A57; st_inirUrl=https%3A%2F%2Fguba.eastmoney.com%2Frank%2F; st_sn=6; st_psi=20250414101921150-117001356556-0660930737; st_asi=delete',
+        # Cookie 可能需要定期更新
+        'Cookie': 'rankpromt=1; qgqp_b_id=772c1f0eee811fb0a495dca38f4b5e65; fullscreengg=1; fullscreengg2=1; st_si=80898044280764; st_pvi=13788631049269; st_sp=2025-04-14%2010%3A16%3A57; st_inirUrl=https%3A%2F%2Fguba.eastmoney.com%2Frank%2F; st_sn=1; st_psi=20250414135032194-117001356556-3694883848; st_asi=delete',
         'Referer': 'https://guba.eastmoney.com/'
     }
 
-    all_titles = []
+    all_posts_data = [] # 用于存储所有帖子数据 (阅读量, 标题, 时间)
     
     for page in range(1, pages+1):
         url = f'https://guba.eastmoney.com/list,{stock_code}_{page}.html'
         
         try:
             response = requests.get(url, headers=headers)
-            response.raise_for_status()  # 检查请求是否成功
-            response.encoding = 'utf-8'  # 确保使用正确的编码
-            soup = BeautifulSoup(response.text, 'lxml')  # 建议使用 lxml 解析器
+            response.raise_for_status()
+            response.encoding = 'utf-8'
+            soup = BeautifulSoup(response.text, 'lxml')
             
-            # 查找包含标题的 <a> 标签，这些标签位于 class="title" 的 div 内
-            # 注意：网站结构可能变化，需要定期检查选择器是否仍然有效
-            title_tags = soup.select('div.title a') 
+            # 查找包含帖子信息的 tr 标签
+            post_rows = soup.select('tbody.listbody tr.listitem')
             
-            # 提取 <a> 标签的文本内容
-            # 过滤掉可能的广告或其他非标题链接（例如，没有 href 或 href 指向 javascript）
-            page_titles = [
-                a.get_text(strip=True) 
-                for a in title_tags 
-                if a.has_attr('href') and a['href'].startswith('/news,')  # 根据实际链接格式调整过滤条件
-            ]
+            page_posts = []
+            if post_rows:
+                for row in post_rows:
+                    read_tag = row.select_one('div.read')
+                    title_tag = row.select_one('div.title a')
+                    update_tag = row.select_one('div.update')
+                    
+                    # 确保所有需要的标签都存在，并且标题链接是有效的帖子链接
+                    if read_tag and title_tag and update_tag and title_tag.has_attr('href') and title_tag['href'].startswith('/news,'):
+                        read_count = read_tag.get_text(strip=True)
+                        title = title_tag.get_text(strip=True)
+                        update_time = update_tag.get_text(strip=True)
+                        page_posts.append({'read_count': read_count, 'title': title, 'update_time': update_time})
             
-            if not page_titles:
-                # 尝试查找另一种可能的结构（如果页面布局变化）
-                # 例如，有时标题可能在不同的选择器下
-                # 注意：网站结构可能变化，需要定期检查选择器是否仍然有效
-                alternative_titles = soup.select('div.articleh.normal_post > span.l3 > a')  # 修正选择器语法错误
-                if alternative_titles:
-                     page_titles = [
-                        a.get_text(strip=True) 
-                        for a in alternative_titles 
-                        if a.has_attr('href') and a['href'].startswith('/news,')  # 同样需要过滤
-                    ]
-                
-                if not page_titles:
-                    print(f'第 {page} 页未找到标题数据，可能已到达末页或页面结构已更改。')
-                    break  # 如果两种方式都找不到，则停止
-                
-            all_titles.extend(page_titles)
-            print(f'已爬取第 {page} 页，找到 {len(page_titles)} 条标题')
+            # 如果主要选择器未找到数据，可以尝试备用选择器（如果网站结构有多种可能）
+            # 注意：备用选择器逻辑需要根据实际情况调整，这里仅作示例保留
+            if not page_posts:
+                 # 尝试查找另一种可能的结构，例如针对置顶帖或不同类型的帖子
+                 # 注意：这里的备用选择器 'div.articleh.normal_post' 看起来不像是行选择器，需要根据实际HTML调整
+                 alternative_rows = soup.select('div.articleh.normal_post') # 示例，需要根据实际HTML调整
+                 if alternative_rows:
+                     print(f'第 {page} 页尝试备用选择器...')
+                     # 此处需要添加从 alternative_rows 提取数据的逻辑
+                     # ... (根据 alternative_rows 的结构编写提取代码) ...
+                     pass # 占位符
+
+                 if not page_posts: # 如果备用逻辑也没有提取到数据
+                    print(f'第 {page} 页未找到帖子数据，可能已到达末页或页面结构已更改。')
+                    break
+
+            all_posts_data.extend(page_posts)
+            print(f'已爬取第 {page} 页，找到 {len(page_posts)} 条帖子数据')
             
-            # 添加随机延迟避免被封
-            time.sleep(1.5 + time.time() % 1)  # 稍微随机化延迟
+            time.sleep(1.5 + time.time() % 1)
             
         except requests.exceptions.RequestException as e:
             print(f'请求第 {page} 页时出错: {str(e)}')
@@ -62,39 +68,42 @@ def get_guba_titles(stock_code, pages=5):
             print(f'处理第 {page} 页时出错: {str(e)}')
             break
             
-    return all_titles
+    return all_posts_data
 
 # 使用示例
 if __name__ == '__main__':
-    # 中芯国际 岭南控股 立讯精密
     stock_codes = ['688981', '000524', '002475']
 
     for stock_code in stock_codes:
         print(f"\n--- 开始爬取股票代码: {stock_code} ---")
-        titles = get_guba_titles(stock_code, pages=3)  # 减少页数以便测试和演示
-        if titles:
-            print(f'\n--- 股票代码 {stock_code} 爬取到的标题 ---')
-            print(f'--- 共爬取 {len(titles)} 条标题 ---')
+        # 调用更新后的函数
+        posts_data = get_guba_posts(stock_code, pages=7) 
+        if posts_data:
+            print(f'\n--- 股票代码 {stock_code} 爬取到的数据 ---')
+            # 可以选择性打印部分数据进行预览
+            # for i, post in enumerate(posts_data[:5], 1): # 打印前5条
+            #     print(f"{i}. 阅读: {post['read_count']}, 标题: {post['title']}, 时间: {post['update_time']}")
+            print(f'--- 共爬取 {len(posts_data)} 条帖子数据 ---')
 
-            # 保存标题到 CSV 文件
-            title_name = f'{stock_code}_titles.csv'
+            # 保存数据到 CSV 文件
+            file_name = f'{stock_code}_posts_data.csv' # 更新文件名
             try:
-                # 使用 'w' 模式打开文件，指定 newline='' 防止空行，encoding='utf-8-sig' 确保 Excel 正确识别中文
-                with open(title_name, 'w', newline='', encoding='utf-8-sig') as f:
-                    writer = csv.writer(f)
-                    writer.writerow(['Title'])  # 写入表头
-                    for title in titles:
-                        writer.writerow([title])  # 将每个标题作为一行写入
-                print(f'标题已保存到 {title_name}')
+                with open(file_name, 'w', newline='', encoding='utf-8-sig') as f:
+                    # 定义表头
+                    fieldnames = ['read_count', 'title', 'update_time']
+                    writer = csv.DictWriter(f, fieldnames=fieldnames)
+                    
+                    writer.writeheader()  # 写入表头
+                    writer.writerows(posts_data) # 写入数据行
+                print(f'数据已保存到 {file_name}')
             except IOError as e:
-                print(f"写入文件 {title_name} 时出错: {e}")
+                print(f"写入文件 {file_name} 时出错: {e}")
             except Exception as e:
-                print(f"处理文件 {title_name} 时发生未知错误: {e}")
+                 print(f"处理文件 {file_name} 时发生未知错误: {e}")
 
         else:
-            print(f'\n未能为股票代码 {stock_code} 爬取到任何标题。')
+            print(f'\n未能为股票代码 {stock_code} 爬取到任何帖子数据。')
 
-        # 在处理下一个股票代码前稍作停顿，避免请求过于频繁
         time.sleep(2 + time.time() % 1)
 
     print("\n--- 所有股票代码处理完毕 ---")
